@@ -17,6 +17,7 @@ test_archive = True
 retry_failure = True
 retry_attempts = 1
 log = True
+csv = True
 # endregion user parameters
 # region code
 
@@ -180,29 +181,30 @@ def record_entry(
 
 # Writes the entry to a csv
 def write_entry(write_type):
-    # Write to the file
-    if write_type == "Write":
-        frame.loc[0:].to_csv(
-            save_path,
-            sep=",",
-            encoding="utf-8-sig",
-            index=False,
-            header=False,
-            na_rep="N/A",
-            mode="a",
-        )
-    # Create the file if it doesn't exist
-    elif write_type == "Create":
-        if os.path.isfile(save_path) == False:
-            frame.to_csv(
+    if csv == True:
+        # Write to the file
+        if write_type == "Write":
+            frame.loc[0:].to_csv(
                 save_path,
                 sep=",",
                 encoding="utf-8-sig",
                 index=False,
-                header=True,
+                header=False,
                 na_rep="N/A",
-                mode="w",
+                mode="a",
             )
+        # Create the file if it doesn't exist
+        elif write_type == "Create":
+            if os.path.isfile(save_path) == False:
+                frame.to_csv(
+                    save_path,
+                    sep=",",
+                    encoding="utf-8-sig",
+                    index=False,
+                    header=True,
+                    na_rep="N/A",
+                    mode="w",
+                )
 
 
 # Gets the size of files and directories
