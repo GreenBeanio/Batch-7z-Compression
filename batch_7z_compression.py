@@ -20,15 +20,12 @@ log = True
 # endregion user parameters
 # region code
 
-# Number for sloppily counting retry attempts
-current_attempt = 0
-
 # If the save path is empty use current working directory
 if save_path == "":
     save_path = Path.cwd()
 # Create the full output path
-save_path = Path(save_path, f"{file_name}.csv")
 log_path = Path(save_path, f"{file_name}.log")
+save_path = Path(save_path, f"{file_name}.csv")
 
 # Data frame to hold stats
 frame = pd.DataFrame(
@@ -41,6 +38,7 @@ frame = pd.DataFrame(
         "Elapsed",
         "Status",
         "Tested",
+        "Attempt Number",
         "Uncompressed",
         "Compressed",
         "Savings",
@@ -49,8 +47,19 @@ frame = pd.DataFrame(
 )
 
 
+# Printing  and saving to log
 def print_log(message):
+    # Print to console
     print(message)
+    # Save to file
+    if log == True:
+        with open(log_path, "a+") as file:
+            file.write(f"{message}\n")
+
+
+# Gets formatted datetime
+def formatted_datetime():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S:%f")
 
 
 # If the user has failed you end yourself
@@ -89,25 +98,6 @@ def check_for_path():
             exit_compression("Passed path isn't a valid directory.")
 
 
-# Checks the sizes of a successful compression (No longer needed?)
-def check_size(to_check):
-    # Empty variables
-    results = []
-    # Searching for the results
-    for line in to_check:
-        split_line = line.split()
-        # If the split_line is more than 2
-        if len(split_line) >= 2:
-            # If it is the uncompressed size
-            if "Size:" in split_line[0]:
-                results.append(int(split_line[1]))
-            # If it is the compressed size (break because they'll be nothing worthwhile after)
-            elif "Compressed:" in split_line[0]:
-                results.append(int(split_line[1]))
-                break
-    return results
-
-
 # Checks if the compression was successful
 def check_success(standard_out):
     # Default Value is failed
@@ -136,7 +126,14 @@ def delete(delete_type, delete_path):
 
 # Records the entry to a data frame
 def record_entry(
-    name, object_type, full_path, start_time, check_archive, tested, sizes
+    name,
+    object_type,
+    full_path,
+    start_time,
+    check_archive,
+    tested,
+    attempt_number,
+    sizes,
 ):
     # Get statistics!
     end_time = datetime.datetime.now()
@@ -168,6 +165,7 @@ def record_entry(
             elapsed_time,
             check_archive,
             tested,
+            attempt_number,
             sizes[0],
             sizes[1],
             savings,
@@ -207,28 +205,48 @@ def write_entry(write_type):
             )
 
 
+# Gets the size of files and directories
+def get_size(object_type, path_to):
+    # To store result
+    size = 0
+    # Get the size for files
+    if object_type == "File":
+        size = os.path.getsize(path_to)
+    # Get the size for directories
+    elif object_type == "Directory":
+        temp_size = 0
+        # For every item in the directory
+        for inside in os.scandir(path_to):
+            # If it's a file, just get the size :^)
+            if inside.is_file():
+                temp_size += os.path.getsize(inside)
+            # If it's a directory, time for recursion
+            elif inside.is_dir():
+                temp_size += get_size("Directory", inside.path)
+        # Set the final size
+        size = temp_size
+    # Return the size
+    return size
+
+
 # Compress the file
-def compression(base_path, full_path, object_type, reset_retry):
-    # Global variable for sloppy recording of retry attempts
-    global current_attempt
-    if reset_retry == True:
-        current_attempt = 1
-    else:
-        current_attempt += 1
+def compression(base_path, full_path, object_type, attempt_number):
+    # Start time of the compression
+    start_time = datetime.datetime.now()
+    # Print logs
+    print_log("====================================")
+    print_log(
+        f'Beginning to archive the {object_type} at "{full_path}"on attempt {attempt_number} at {formatted_datetime()}'
+    )
     # Variable to store results
     sizes = [0, 0]
     check_archive = "No"
     tested = "No"
-    # Start time of the compression
-    start_time = datetime.datetime.now()
     # Get the name for statistics
     name = full_path.name
     # Get the stem of the item to be encrypted
     stem = full_path.stem
     output_path = Path(base_path, f"{stem}.7z")
-    # Print logs
-    print_log("====================================")
-    print_log(f'Beginning to archive the {object_type} at "{full_path}"')
     # Run 7z to create an archive
     archive_result = subprocess.run(
         ["7z", "a", f"{output_path}", f"{full_path}"],
@@ -241,71 +259,107 @@ def compression(base_path, full_path, object_type, reset_retry):
     # Check if the file archived successfully
     if check_archive == "Passed":
         # Get the raw size
-        if object_type == "File":
-            sizes.append(os.path.getsize(full_path))
-        elif object_type == "Directory":
-            sizes.append(os.scandir(full_path))
+        sizes[0] = get_size(object_type, full_path)
         # Get the compressed size
-        sizes.append(os.path.getsize(output_path))
+        sizes[1] = get_size("File", output_path)
         # Print log
-        print_log(f'Archive of the {object_type} at "{full_path}" was successful')
+        print_log(
+            f'Archive of the {object_type} at "{full_path}" was successful on attempt {attempt_number} at {formatted_datetime()}'
+        )
+        # If the we want to test the archive as well
+        if test_archive == True:
+            # Print log
+            print_log(
+                f'Testing the archive at "{output_path}" at {formatted_datetime()}'
+            )
+            # Run the 7z test
+            test_result = subprocess.run(
+                ["7z", "t", f"{output_path}"],
+                shell=False,
+                capture_output=True,
+                text=True,
+            )
+            # List of all the lines from the result
+            test_out = test_result.stdout.split("\n")
+            # Check for the success of the test (Think I can safely limit the results down to this range)
+            check_test = check_success(test_out[8:-4])
+            # Change test results
+            tested = check_test
+            # If the archive passed
+            if check_test == "Passed":
+                # Delete the source file/directory
+                delete(object_type, full_path)
+                # Print log
+                print_log(
+                    f'Test of the archive at "{output_path}" was successful on attempt {attempt_number} at {formatted_datetime()}'
+                )
+            # If the archive failed
+            elif check_test == "Failed":
+                # Remove the failed 7z file
+                delete("File", output_path)
+                # Print log
+                print_log(
+                    f'Test of the archive at "{output_path}" was unsuccessful on attempt {attempt_number} at {formatted_datetime()}'
+                )
+                # Write to csv
+                record_entry(
+                    name,
+                    object_type,
+                    full_path,
+                    start_time,
+                    check_archive,
+                    tested,
+                    attempt_number,
+                    sizes,
+                )
+                if retry_failure == True:
+                    print_log(
+                        f'Retrying to archive the {object_type} at "{full_path}" was unsuccessful at {formatted_datetime()}'
+                    )
+                    return "Retry"
+                else:
+                    return "Skip"
+        # If we're not testing the archive
+        else:
+            # Delete the source file/directory
+            delete(object_type, full_path)
     # The archive didn't pass. Remove it and try again or skip to next
     else:
         # Remove the failed 7z file
         delete("File", output_path)
         # Print log
-        print_log(f'Archive of the {object_type} at "{full_path}" was unsuccessful')
+        print_log(
+            f'Archive of the {object_type} at "{full_path}" was unsuccessful on attempt {attempt_number} at {formatted_datetime()}'
+        )
         # Write to csv
         record_entry(
-            name, object_type, full_path, start_time, check_archive, tested, sizes
+            name,
+            object_type,
+            full_path,
+            start_time,
+            check_archive,
+            tested,
+            attempt_number,
+            sizes,
         )
         if retry_failure == True:
             print_log(
-                f'Retrying to archive the {object_type} at "{full_path}" was unsuccessful'
+                f'Retrying to archive the {object_type} at "{full_path}" at {formatted_datetime()}'
             )
-            compression(base_path, full_path, object_type, False)
-    # Test the archive if wanted
-    if test_archive == True:
-        # Print log
-        print_log(f'Testing the archive at "{output_path}"')
-        # Run the 7z test
-        test_result = subprocess.run(
-            ["7z", "t", f"{output_path}"],
-            shell=False,
-            capture_output=True,
-            text=True,
-        )
-        # List of all the lines from the result
-        test_out = test_result.stdout.split("\n")
-        # Check for the success of the test (Think I can safely limit the results down to this range)
-        check_test = check_success(test_out[8:-4])
-        # Change test results
-        tested = check_test
-        # If the archive passed
-        if check_test == "Passed":
-            ############Get the sizes (Think it'll always be there, but not entirely sure)
-            ############sizes = check_size(test_out[-3:-1])
-            # Delete the source file/directory
-            delete(object_type, full_path)
-            # Print log
-            print_log(f'Test of the archive at "{output_path}" was successful')
-        # If the archive failed
-        elif check_test == "Failed":
-            # Remove the failed 7z file
-            delete("File", output_path)
-            # Print log
-            print_log(f'Test of the archive at "{output_path}" was unsuccessful')
-            # Write to csv
-            record_entry(
-                name, object_type, full_path, start_time, check_archive, tested, sizes
-            )
-            if retry_failure == True:
-                print_log(
-                    f'Retrying to archive the {object_type} at "{full_path}" was unsuccessful'
-                )
-                compression(base_path, full_path, object_type, False)
+            return "Retry"
+        else:
+            return "Skip"
     # Write to csv
-    record_entry(name, object_type, full_path, start_time, check_archive, tested, sizes)
+    record_entry(
+        name,
+        object_type,
+        full_path,
+        start_time,
+        check_archive,
+        tested,
+        attempt_number,
+        sizes,
+    )
 
 
 # For every object in the directory
@@ -318,6 +372,8 @@ def begin_compression():
     items = os.listdir(designated_path)
     # For every item in the directory
     for entry in items:
+        # For recording retry counts
+        current_attempt = 1
         # Get the current items full path
         full_item = Path(designated_path, entry)
         # Check if the item is a directory or file
@@ -327,13 +383,32 @@ def begin_compression():
             # If the file isn't already a 7z then compress it
             if extension != ".7z":
                 # Compress the file
-                compression(designated_path, full_item, "File", True)
+                compression_result = compression(
+                    designated_path, full_item, "File", current_attempt
+                )
+                # If the compression result failed then retry it or skip it
+                if (
+                    compression_result == "Retry"
+                    and current_attempt < retry_attempts + 1
+                ):
+                    compression_result = compression(
+                        designated_path, full_item, "File", current_attempt
+                    )
             else:
                 print_log("====================================")
-                print_log(f'7z File Skipped at "{designated_path}"')
+                print_log(
+                    f'7z File Skipped at "{designated_path}" at {formatted_datetime()}'
+                )
         elif full_item.is_dir():
             # Compress the directory
-            compression(designated_path, full_item, "Directory", True)
+            compression_result = compression(
+                designated_path, full_item, "Directory", current_attempt
+            )
+            # If the compression result failed then retry it or skip it
+            if compression_result == "Retry" and current_attempt < retry_attempts + 1:
+                compression_result = compression(
+                    designated_path, full_item, "File", current_attempt
+                )
 
 
 # Begin the actual main function
