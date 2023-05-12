@@ -289,20 +289,20 @@ def compression(base_path, full_path, object_type, attempt_number):
             tested = check_test
             # If the archive passed
             if check_test == "Passed":
-                # Delete the source file/directory
-                delete(object_type, full_path)
                 # Print log
                 print_log(
                     f'Test of the archive at "{output_path}" was successful on attempt {attempt_number} at {formatted_datetime()}'
                 )
+                # Delete the source file/directory
+                delete(object_type, full_path)
             # If the archive failed
             elif check_test == "Failed":
-                # Remove the failed 7z file
-                delete("File", output_path)
                 # Print log
                 print_log(
                     f'Test of the archive at "{output_path}" was unsuccessful on attempt {attempt_number} at {formatted_datetime()}'
                 )
+                # Remove the failed 7z file
+                delete("File", output_path)
                 # Write to csv
                 record_entry(
                     name,
@@ -327,12 +327,12 @@ def compression(base_path, full_path, object_type, attempt_number):
             delete(object_type, full_path)
     # The archive didn't pass. Remove it and try again or skip to next
     else:
-        # Remove the failed 7z file
-        delete("File", output_path)
         # Print log
         print_log(
             f'Archive of the {object_type} at "{full_path}" was unsuccessful on attempt {attempt_number} at {formatted_datetime()}'
         )
+        # Remove the failed 7z file
+        delete("File", output_path)
         # Write to csv
         record_entry(
             name,
