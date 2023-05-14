@@ -93,7 +93,7 @@ def check_for_path():
     if check_arguments() == "Passed":
         passed_path = Path(sys.argv[1])
         # Check if it's a valid path
-        if passed_path:
+        if passed_path.is_dir():
             return passed_path
         else:
             exit_compression("Passed path isn't a valid directory.")
@@ -366,10 +366,10 @@ def compression(base_path, full_path, object_type, attempt_number):
 
 # For every object in the directory
 def begin_compression():
-    # Create the csv for stat storage if it doesn't already exist
-    write_entry("Create")
     # Get the directory
     designated_path = check_for_path()
+    # Create the csv for stat storage if it doesn't already exist (and the path exists)
+    write_entry("Create")
     # Get the items in the directory
     items = os.listdir(designated_path)
     # For every item in the directory
