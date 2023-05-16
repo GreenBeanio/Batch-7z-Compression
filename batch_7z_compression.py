@@ -34,6 +34,7 @@ frame = pd.DataFrame(
         "Name",
         "Type",
         "Path",
+        "Last Modification",
         "Start",
         "End",
         "Elapsed",
@@ -130,6 +131,7 @@ def record_entry(
     name,
     object_type,
     full_path,
+    last_modification,
     start_time,
     check_archive,
     tested,
@@ -146,6 +148,7 @@ def record_entry(
     elapsed_time = datetime.datetime.utcfromtimestamp(
         elapsed_time.total_seconds()
     ).strftime("%H:%M:%S:%f")
+    last_modification = last_modification.strftime("%Y-%m-%d %H:%M:%S:%f")
 
     # Savings
     savings = sizes[0] - sizes[1]
@@ -161,6 +164,7 @@ def record_entry(
             name,
             object_type,
             full_path,
+            last_modification,
             start_time,
             end_time,
             elapsed_time,
@@ -213,7 +217,8 @@ def get_size(object_type, path_to):
     size = 0
     # Get the size for files
     if object_type == "File":
-        size = os.path.getsize(path_to)
+        # size = os.path.getsize(path_to)
+        size = os.stat(path_to).st_size
     # Get the size for directories
     elif object_type == "Directory":
         temp_size = 0
@@ -221,7 +226,8 @@ def get_size(object_type, path_to):
         for inside in os.scandir(path_to):
             # If it's a file, just get the size :^)
             if inside.is_file():
-                temp_size += os.path.getsize(inside)
+                # temp_size += os.path.getsize(inside)
+                temp_size += os.stat(inside).st_size
             # If it's a directory, time for recursion
             elif inside.is_dir():
                 temp_size += get_size("Directory", inside.path)
@@ -229,6 +235,40 @@ def get_size(object_type, path_to):
         size = temp_size
     # Return the size
     return size
+
+
+# Gets the age of files and directories
+def get_age(object_type, path_to):
+    # To store result
+    last_modification = ""
+    # Get the size for files
+    if object_type == "File":
+        last_modification = os.stat(path_to).st_mtime
+        last_modification = datetime.datetime.utcfromtimestamp(last_modification)
+    # Get the size for directories
+    elif object_type == "Directory":
+        temp_age = datetime.datetime.utcfromtimestamp(0)
+        # For every item in the directory
+        for inside in os.scandir(path_to):
+            # If it's a file check the age compared to the temp age
+            if inside.is_file():
+                temp_modification = os.stat(inside).st_mtime
+                temp_modification = datetime.datetime.utcfromtimestamp(
+                    temp_modification
+                )
+                # If the temp_modification is younger then replace it
+                if temp_modification > temp_age:
+                    temp_age = temp_modification
+            # If it's a directory, time for recursion
+            elif inside.is_dir():
+                temp_modification = get_age("Directory", inside.path)
+                # If the temp_modification is younger then replace it
+                if temp_modification > temp_age:
+                    temp_age = temp_modification
+        # Set the final size
+        last_modification = temp_age
+    # Return the size
+    return last_modification
 
 
 # Compress the file
@@ -260,13 +300,15 @@ def compression(base_path, full_path, object_type, attempt_number):
     check_archive = check_success(archive_out[-2:])
     # Check if the file archived successfully
     if check_archive == "Passed":
+        # Get the age
+        last_modification = get_age(object_type, full_path)
         # Get the raw size
         sizes[0] = get_size(object_type, full_path)
         # Get the compressed size
         sizes[1] = get_size("File", output_path)
         # Print log
         print_log(
-            f'Archive of the {object_type} at "{full_path}" was successful on attempt {attempt_number} at {formatted_datetime()}'
+            f'Archive of the {object_type} at "{full_path}" was successful on attempt {attempt_number} at {formatted_datetime()} from {last_modification.strftime("%Y-%m-%d %H:%M:%S:%f")}'
         )
         # If the we want to test the archive as well
         if test_archive == True:
@@ -308,6 +350,7 @@ def compression(base_path, full_path, object_type, attempt_number):
                     name,
                     object_type,
                     full_path,
+                    last_modification,
                     start_time,
                     check_archive,
                     tested,
@@ -338,6 +381,7 @@ def compression(base_path, full_path, object_type, attempt_number):
             name,
             object_type,
             full_path,
+            last_modification,
             start_time,
             check_archive,
             tested,
@@ -356,6 +400,7 @@ def compression(base_path, full_path, object_type, attempt_number):
         name,
         object_type,
         full_path,
+        last_modification,
         start_time,
         check_archive,
         tested,
